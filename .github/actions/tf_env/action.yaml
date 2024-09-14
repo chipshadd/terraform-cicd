@@ -1,0 +1,10 @@
+name: Setup Terraform environment
+runs:
+  using: "composite"
+  steps:
+  - name: Setup Terraform
+    uses: hashicorp/setup-terraform@v3
+      
+  - name: Terraform Initialize
+    run: terraform init
+    shell: bash

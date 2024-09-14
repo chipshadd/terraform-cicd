@@ -1,0 +1,25 @@
+name: Pre-commit hooks
+
+on: push
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    ## Install credentials as needed for your backend
+    # - uses: google-github-actions/auth@v2
+    #   with:
+    #     credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+
+    - run: terraform init
+
+    - name: Run pre-commit
+      uses: addnab/docker-run-action@v3
+      with:
+        image: ghcr.io/antonbabenko/pre-commit-terraform:latest 
+        options: -v ${{ github.workspace }}:/lint -w /lint
+        run: pre-commit run -a

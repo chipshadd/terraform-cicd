@@ -1,0 +1,79 @@
+name: Terraform apply
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+env:
+  DD_API_KEY: ${{ secrets.DD_API_KEY }}
+  DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+
+jobs:
+  terraform-apply:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      ## Install credentials as needed for your backend
+      # - uses: google-github-actions/auth@v2
+      #   with:
+      #     credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+
+      - name: Setup Terraform environment
+        uses: ./.github/actions/tf_env/
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -out=tfplan -input=false -no-color
+          terraform show -json tfplan | jq '.resource_changes' > tfplan_changes.json
+
+      - run: npm install md5
+      - uses: actions/github-script@v7
+        name: Verify that plan has not drifted
+        with:
+          script: |
+            const fs = require('fs')
+            const md5 = require('md5')
+            const plan = fs.readFileSync('tfplan_changes.json')
+            const md5sum = md5(plan)
+            const comment_string = 'MD5SUM of terraform plan: '
+            const hash_body = `${comment_string} \`${md5sum}\``
+            async function searchCommentsForString(owner, repo, issue_number, searchString) {
+              try {
+                // Fetch all comments from the issue using pagination
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner,
+                  repo,
+                  issue_number
+                });
+
+                // Loop through each comment and search for the specified string
+                const existingComment = comments.find(
+                    (c) => c.body.includes(searchString)
+                  )
+                if (existingComment) {
+                  console.log(`Hash found in comment: ${existingComment.body}`)
+                  return true
+                } else {
+                  throw `Terraform hash mismatch or missing.  Comment this in pull resquest #${context.payload.number} to bypass => ${hash_body}`
+                }
+              } catch (error) {
+                console.error(error)
+                process.exit(1)
+              }
+            }
+            searchCommentsForString(context.repo.owner, context.repo.repo, context.payload.number, hash_body)
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve
